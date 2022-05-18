@@ -1,0 +1,9 @@
+name: "Slack Notify"
+description: "Send a notification to Slack"
+author: "OnionYST Astraea"
+runs:
+  using: "docker"
+  image: "Dockerfile"
+branding:
+  icon: "bell"
+  color: "green"
