@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 )
 
 // GitHub Actions environment variables
@@ -96,6 +97,8 @@ func main() {
 	commitURL := getEnv(EnvSlackCommitURL)
 	avatarURL := getEnv(EnvSlackAvatarURL)
 	compareURL := getEnv(EnvSlackCompareURL)
+
+	commitMsg = strings.Split(commitMsg, "\n")[0]
 
 	statusColors := map[string]string{
 		"success":   ColorSuccess,
