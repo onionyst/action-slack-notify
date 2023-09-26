@@ -1,3 +1,3 @@
 module slack-notify
 
-go 1.18
+go 1.21
