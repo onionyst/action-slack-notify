@@ -43,33 +43,33 @@ const (
 
 // Message Slack incoming webhook message
 type Message struct {
-	Text        string        `json:"text,omitempty"` // fallback string
-	Blocks      []interface{} `json:"blocks,omitempty"`
-	Attachments []Attachment  `json:"attachments,omitempty"`
-	ThreadTS    string        `json:"thread_ts,omitempty"`
-	Markdown    bool          `json:"mrkdwn,omitempty"` // default: true
+	Text        string       `json:"text,omitempty"` // fallback string
+	Blocks      []any        `json:"blocks,omitempty"`
+	Attachments []Attachment `json:"attachments,omitempty"`
+	ThreadTS    string       `json:"thread_ts,omitempty"`
+	Markdown    bool         `json:"mrkdwn,omitempty"` // default: true
 }
 
 // Attachment Slack incoming webhook attachment
 type Attachment struct {
-	Blocks []interface{} `json:"blocks,omitempty"`
-	Color  string        `json:"color,omitempty"`
+	Blocks []any  `json:"blocks,omitempty"`
+	Color  string `json:"color,omitempty"`
 }
 
 // Context Slack incoming webhook context block
 type Context struct {
-	Type     string        `json:"type"`               // always `context`
-	Elements []interface{} `json:"elements"`           // one of Image and Text, maximum size: 10
-	BlockID  string        `json:"block_id,omitempty"` // maximum length: 255
+	Type     string `json:"type"`               // always `context`
+	Elements []any  `json:"elements"`           // one of Image and Text, maximum size: 10
+	BlockID  string `json:"block_id,omitempty"` // maximum length: 255
 }
 
 // Section Slack incoming webhook section block
 type Section struct {
-	Type      string      `json:"type"`                // always `section`
-	Text      *Text       `json:"text,omitempty"`      // maximum length: 3000
-	BlockID   string      `json:"block_id,omitempty"`  // maximum length: 255
-	Fields    []*Text     `json:"fields,omitempty"`    // maximum size: 10
-	Accessory interface{} `json:"accessory,omitempty"` // one of block elements
+	Type      string  `json:"type"`                // always `section`
+	Text      *Text   `json:"text,omitempty"`      // maximum length: 3000
+	BlockID   string  `json:"block_id,omitempty"`  // maximum length: 255
+	Fields    []*Text `json:"fields,omitempty"`    // maximum size: 10
+	Accessory any     `json:"accessory,omitempty"` // one of block elements
 }
 
 // Image Slack incoming webhook image block element
@@ -121,10 +121,10 @@ func main() {
 
 	payload := Message{
 		Text: fmt.Sprintf("GitHub Actions (%s): %s %s", repo, workflow, status),
-		Blocks: []interface{}{
+		Blocks: []any{
 			&Context{
 				Type: "context",
-				Elements: []interface{}{
+				Elements: []any{
 					&Image{
 						Type:     "image",
 						ImageURL: avatarURL,
@@ -139,7 +139,7 @@ func main() {
 		},
 		Attachments: []Attachment{
 			{
-				Blocks: []interface{}{
+				Blocks: []any{
 					&Section{
 						Type: "section",
 						Text: &Text{
@@ -197,7 +197,7 @@ func getEnv(key string) string {
 	return value
 }
 
-func jsonMarshal(t interface{}) ([]byte, error) {
+func jsonMarshal(t any) ([]byte, error) {
 	buffer := &bytes.Buffer{}
 	encoder := json.NewEncoder(buffer)
 	encoder.SetEscapeHTML(false)
