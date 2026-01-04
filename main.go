@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 )
 
 // GitHub Actions environment variables
@@ -88,17 +90,40 @@ type Text struct {
 }
 
 func main() {
-	webhookURL := getEnv(EnvSlackWebhookURL)
-	status := getEnv(EnvSlackStatus)
-	author := getEnv(EnvSlackAuthor)
-	email := getEnv(EnvSlackEmail)
-	commitID := getEnv(EnvSlackCommitID)
-	commitMsg := getEnv(EnvSlackCommitMsg)
-	commitURL := getEnv(EnvSlackCommitURL)
-	avatarURL := getEnv(EnvSlackAvatarURL)
-	compareURL := getEnv(EnvSlackCompareURL)
+	// Required
+	webhookURL := mustEnv(EnvSlackWebhookURL)
+	status := strings.ToLower(mustEnv(EnvSlackStatus))
 
-	commitMsg = strings.Split(commitMsg, "\n")[0]
+	// Optional Slack bits
+	author := envOr(EnvSlackAuthor, "unknown")
+	email := envOr(EnvSlackEmail, "")
+	commitID := envOr(EnvSlackCommitID, "")
+	commitMsg := envOr(EnvSlackCommitMsg, "")
+	commitURL := envOr(EnvSlackCommitURL, "")
+	avatarURL := envOr(EnvSlackAvatarURL, "")
+	compareURL := envOr(EnvSlackCompareURL, "")
+
+	// GitHub bits
+	event := envOr(EnvGitHubEventName, "")
+	ref := envOr(EnvGitHubRef, "")
+	repo := envOr(EnvGitHubRepo, "")
+	owner := envOr(EnvGitHubRepoOwner, "")
+	runID := envOr(EnvGitHubRunID, "")
+	runNumber := envOr(EnvGitHubRunNumber, "")
+	workflow := envOr(EnvGitHubWorkflow, "")
+
+	// Normalize commit message to first line
+	if i := strings.IndexByte(commitMsg, '\n'); i >= 0 {
+		commitMsg = commitMsg[:i]
+	}
+
+	// Fallbacks for compareURL
+	if compareURL == "" {
+		compareURL = commitURL
+	}
+	if compareURL == "" && repo != "" {
+		compareURL = fmt.Sprintf("https://github.com/%s", repo)
+	}
 
 	statusColors := map[string]string{
 		"success":   ColorSuccess,
@@ -107,17 +132,38 @@ func main() {
 	}
 	color, ok := statusColors[status]
 	if !ok {
-		fmt.Fprintln(os.Stderr, fmt.Sprintf("Invalid %s", EnvSlackStatus))
+		fmt.Fprintf(os.Stderr, "Invalid %s\n", EnvSlackStatus)
 		os.Exit(1)
 	}
 
-	event := os.Getenv(EnvGitHubEventName)
-	ref := os.Getenv(EnvGitHubRef)
-	repo := os.Getenv(EnvGitHubRepo)
-	owner := os.Getenv(EnvGitHubRepoOwner)
-	runID := os.Getenv(EnvGitHubRunID)
-	runNumber := os.Getenv(EnvGitHubRunNumber)
-	workflow := os.Getenv(EnvGitHubWorkflow)
+	shortCommit := commitID
+	if len(shortCommit) > 8 {
+		shortCommit = shortCommit[:8]
+	}
+
+	// Author field formatting: mailto only if email exists
+	authorField := fmt.Sprintf("*Author:*\n%s", author)
+	if email != "" {
+		authorField = fmt.Sprintf("*Author:*\n<mailto:%s|%s>", email, author)
+	}
+
+	// Ref field formatting: link only if compareURL exists
+	refField := fmt.Sprintf("*Ref:*\n%s", ref)
+	if compareURL != "" && ref != "" {
+		refField = fmt.Sprintf("*Ref:*\n<%s|%s>", compareURL, ref)
+	} else if compareURL != "" {
+		refField = fmt.Sprintf("*Ref:*\n<%s|%s>", compareURL, ref)
+	}
+
+	// Commit line: link only if commitURL exists
+	commitLine := fmt.Sprintf("*Message:*\n%s", commitMsg)
+	if commitURL != "" && shortCommit != "" {
+		commitLine = fmt.Sprintf("*Message:*\n<%s|%s (%s)>", commitURL, commitMsg, shortCommit)
+	} else if shortCommit != "" {
+		commitLine = fmt.Sprintf("*Message:*\n%s (%s)", commitMsg, shortCommit)
+	}
+
+	runLink := fmt.Sprintf("https://github.com/%s/actions/runs/%s", repo, runID)
 
 	payload := Message{
 		Text: fmt.Sprintf("GitHub Actions (%s): %s %s", repo, workflow, status),
@@ -144,35 +190,23 @@ func main() {
 						Type: "section",
 						Text: &Text{
 							Type: "mrkdwn",
-							Text: fmt.Sprintf("*<https://github.com/%s/actions/runs/%s|%s #%s>*", repo, runID, workflow, runNumber),
+							Text: fmt.Sprintf("*<%s|%s #%s>*", runLink, workflow, runNumber),
 						},
 					},
 					&Section{
 						Type: "section",
 						Fields: []*Text{
-							{
-								Type: "mrkdwn",
-								Text: fmt.Sprintf("*Ref:*\n<%s|%s>", compareURL, ref),
-							},
-							{
-								Type: "mrkdwn",
-								Text: fmt.Sprintf("*Author:*\n<mailto:%s|%s>", email, author),
-							},
-							{
-								Type: "mrkdwn",
-								Text: fmt.Sprintf("*Event:*\n%s", event),
-							},
-							{
-								Type: "mrkdwn",
-								Text: fmt.Sprintf("*Status:*\n%s", status),
-							},
+							{Type: "mrkdwn", Text: refField},
+							{Type: "mrkdwn", Text: authorField},
+							{Type: "mrkdwn", Text: fmt.Sprintf("*Event:*\n%s", event)},
+							{Type: "mrkdwn", Text: fmt.Sprintf("*Status:*\n%s", status)},
 						},
 					},
 					&Section{
 						Type: "section",
 						Text: &Text{
 							Type: "mrkdwn",
-							Text: fmt.Sprintf("*Message:*\n<%s|%s (%s)>", commitURL, commitMsg, commitID[:8]),
+							Text: commitLine,
 						},
 					},
 				},
@@ -187,13 +221,20 @@ func main() {
 	}
 }
 
-func getEnv(key string) string {
+func mustEnv(key string) string {
 	value := os.Getenv(key)
 	if value == "" {
-		fmt.Fprintln(os.Stderr, fmt.Sprintf("Need to provide %s", key))
+		fmt.Fprintf(os.Stderr, "Need to provide %s\n", key)
 		os.Exit(1)
 	}
+	return value
+}
 
+func envOr(key, fallback string) string {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
 	return value
 }
 
@@ -211,16 +252,25 @@ func send(webhookURL string, payload Message) error {
 		return err
 	}
 
-	b := bytes.NewBuffer(enc)
-
-	res, err := http.Post(webhookURL, "application/json", b)
+	req, err := http.NewRequest(http.MethodPost, webhookURL, bytes.NewReader(enc))
 	if err != nil {
 		return err
 	}
-	if res.StatusCode != 200 {
-		return fmt.Errorf("Error on message: %s", res.Status)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	res, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	body, _ := io.ReadAll(res.Body)
+
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		return fmt.Errorf("error on message: %s: %s", res.Status, strings.TrimSpace(string(body)))
 	}
 
-	fmt.Println(res.Status)
+	fmt.Println(strings.TrimSpace(string(body)))
 	return nil
 }
